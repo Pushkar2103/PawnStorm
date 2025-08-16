@@ -1,38 +1,97 @@
 import { WebSocket } from 'ws';
 
-let waitingPlayer: WebSocket | null = null;
+type WaitingEntry = {
+  ws: WebSocket;
+  clientId: string;
+};
 
-export const onlineGame = (ws: WebSocket) => {
+const waitingQueue: WaitingEntry[] = [];
+const peers = new Map<WebSocket, WebSocket>();
 
-    if (waitingPlayer && waitingPlayer.readyState === WebSocket.OPEN) {
+function safeSend(ws: WebSocket, data: any) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
 
-        const player1 = waitingPlayer;
-        const player2 = ws;
+function pairPlayers(a: WaitingEntry, b: WaitingEntry) {
+  safeSend(a.ws, { type: 'matchFound', color: 'white' });
+  safeSend(b.ws, { type: 'matchFound', color: 'black' });
 
-        waitingPlayer = null;
+  peers.set(a.ws, b.ws);
+  peers.set(b.ws, a.ws);
 
-        player1.send(JSON.stringify({ type: 'matchFound', opponent: 'player2', color: 'white' }));
-        player2.send(JSON.stringify({ type: 'matchFound', opponent: 'player1', color: 'black' }));
+  const wire = (src: WebSocket, dst: WebSocket) => {
+    src.on('message', (raw: Buffer) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg?.type === 'move') {
+          safeSend(dst, msg);
+        }
+      } catch {
+      }
+    });
 
-        player1.on('message', message => {
-            if (player2.readyState === WebSocket.OPEN) {
-                player2.send(message);
-            }
-        });
+    src.on('close', () => {
+      peers.delete(src);
+      const other = peers.get(dst);
+      if (other === src) peers.delete(dst);
+      safeSend(dst, { type: 'opponentDisconnected' });
+    });
+  };
 
-        player2.on('message', message => {
-            if (player1.readyState === WebSocket.OPEN) {
-                player1.send(message);
-            }
-        });
-    } else {
-        waitingPlayer = ws;
-        ws.send(JSON.stringify({ type: 'waitingForOpponent' }));
+  wire(a.ws, b.ws);
+  wire(b.ws, a.ws);
+}
 
-        ws.on('close', () => {
-            if (waitingPlayer === ws) {
-                waitingPlayer = null;
-            }
-        });
+export const onlineGame = (ws: WebSocket, clientId?: string) => {
+  let joined = false;
+
+  ws.on('message', (raw: Buffer) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
     }
+
+    if (msg?.type === 'queueRandom') {
+      const cid = String(msg.clientId || clientId || '');
+
+      while (waitingQueue.length > 0) {
+        const candidate = waitingQueue.shift()!;
+        if (candidate.ws.readyState !== WebSocket.OPEN) continue;
+
+        if (candidate.clientId && cid && candidate.clientId === cid) {
+          waitingQueue.push(candidate);
+          break;
+        }
+        pairPlayers(candidate, { ws, clientId: cid });
+        joined = true;
+        return;
+      }
+
+      waitingQueue.push({ ws, clientId: cid });
+      safeSend(ws, { type: 'waitingForOpponent' });
+      joined = true;
+    }
+  });
+
+  ws.on('close', () => {
+    const idx = waitingQueue.findIndex((e) => e.ws === ws);
+    if (idx >= 0) waitingQueue.splice(idx, 1);
+
+    const peer = peers.get(ws);
+    if (peer) {
+      peers.delete(ws);
+      peers.delete(peer);
+      safeSend(peer, { type: 'opponentDisconnected' });
+    }
+  });
+
+  setTimeout(() => {
+    if (!joined && ws.readyState === WebSocket.OPEN) {
+      safeSend(ws, { type: 'info', message: 'Send {"type":"queueRandom","clientId":"..."} to join the queue.' });
+    }
+  }, 2000);
 };

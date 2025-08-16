@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 
-import {onlineGame} from './game/onlineGame';
-import {friendGame} from './game/friendGame';
+import { onlineGame } from './game/onlineGame';
+import { friendGame } from './game/friendGame';
 
 dotenv.config();
 
@@ -17,23 +17,24 @@ app.use(cors());
 
 const wss = new WebSocketServer({ server });
 
-app.get('/', (req, res) => {
-    res.send('Welcome to the Chess Server!');
-});
-
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws: WebSocket, req) => {
+  try {
     const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const clientId = url.searchParams.get('cid') || ''; 
 
     if (url.pathname === '/play-online') {
-        onlineGame(ws);
+      onlineGame(ws, clientId);
     } else if (url.pathname.startsWith('/play-with-friend/')) {
-        const roomId = url.pathname.split('/')[2];
-        friendGame(ws, roomId);
+      const roomId = url.pathname.split('/')[2];
+      friendGame(ws, roomId, clientId);
     } else {
-        ws.close();
+      ws.close();
     }
+  } catch {
+    ws.close();
+  }
 });
 
 server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });

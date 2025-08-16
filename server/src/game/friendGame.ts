@@ -1,39 +1,90 @@
 import { WebSocket } from 'ws';
 
-const rooms = new Map<string, WebSocket>();
+type RoomState = {
+  host: WebSocket;
+  hostId: string;
+};
 
-export const friendGame = (ws: WebSocket, roomId: string) => {
-    const player1 = rooms.get(roomId);
+const rooms = new Map<string, RoomState>();
+const peers = new Map<WebSocket, WebSocket>();
 
-    if (player1 && player1.readyState === WebSocket.OPEN) {
+function safeSend(ws: WebSocket, data: any) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
 
-        const player2 = ws;
-        
+function wirePeers(a: WebSocket, b: WebSocket) {
+  peers.set(a, b);
+  peers.set(b, a);
+
+  const wire = (src: WebSocket, dst: WebSocket) => {
+    src.on('message', (raw: Buffer) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg?.type === 'move') {
+          safeSend(dst, msg);
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+    src.on('close', () => {
+      peers.delete(src);
+      const other = peers.get(dst);
+      if (other === src) peers.delete(dst);
+      safeSend(dst, { type: 'friendLeft' });
+    });
+  };
+
+  wire(a, b);
+  wire(b, a);
+}
+
+export const friendGame = (ws: WebSocket, roomId: string, clientId?: string) => {
+  let joined = false;
+
+  ws.on('message', (raw: Buffer) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+
+    if (msg?.type === 'joinRoom' && msg.roomId === roomId) {
+      const cid = String(msg.clientId || clientId || '');
+
+
+      const existing = rooms.get(roomId);
+      if (existing && existing.host.readyState === WebSocket.OPEN) {
+        if (existing.hostId && existing.hostId === cid) {
+          safeSend(ws, { type: 'waitingForFriend', roomId });
+          return;
+        }
+
         rooms.delete(roomId);
-
-        player1.send(JSON.stringify({ type: 'matchFound', opponent: 'player2', color: 'white' }));
-        player2.send(JSON.stringify({ type: 'matchFound', opponent: 'player1', color: 'black' }));
-
-        player1.on('message', message => {
-            if (player2.readyState === WebSocket.OPEN) {
-                player2.send(message);
-            }
-        });
-
-        player2.on('message', message => {
-            if (player1.readyState === WebSocket.OPEN) {
-                player1.send(message);
-            }
-        });
-
-    } else {
-        rooms.set(roomId, ws);
-        ws.send(JSON.stringify({ type: 'waitingForFriend', roomId }));
+        safeSend(existing.host, { type: 'matchFound', color: 'white', roomId });
+        safeSend(ws, { type: 'matchFound', color: 'black', roomId });
+        wirePeers(existing.host, ws);
+        joined = true;
+        return;
+      } else {
+        rooms.set(roomId, { host: ws, hostId: cid });
+        safeSend(ws, { type: 'waitingForFriend', roomId });
+        joined = true;
 
         ws.on('close', () => {
-            if (rooms.get(roomId) === ws) {
-                rooms.delete(roomId);
-            }
+          const r = rooms.get(roomId);
+          if (r?.host === ws) rooms.delete(roomId);
         });
+      }
     }
+  });
+
+  setTimeout(() => {
+    if (!joined && ws.readyState === WebSocket.OPEN) {
+      safeSend(ws, { type: 'info', message: 'Send {"type":"joinRoom","roomId":"...","clientId":"..."} to wait/join.' });
+    }
+  }, 2000);
 };

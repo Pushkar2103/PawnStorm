@@ -47,8 +47,9 @@ const colorClasses: Record<string, { border: string; hoverBg: string }> = {
   lime: { border: 'hover:border-lime-500', hoverBg: 'group-hover:bg-lime-500/20' },
 }
 
-const HomePage = ({ onGameStart }: { onGameStart: (mode: string, roomId?: string|null) => void }) => {
+const HomePage = ({ onGameStart }: { onGameStart: (mode: string, roomId?: string|null, difficulty?: string) => void }) => {
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [aiDialogOpen, setAiDialogOpen] = useState(false)
 
   const menuOptions = [
     { title: 'Play Random Player', mode: 'random', icon: <KingIcon color="#3b82f6" />, color: 'blue' },
@@ -57,10 +58,11 @@ const HomePage = ({ onGameStart }: { onGameStart: (mode: string, roomId?: string
     { title: 'Pass and Play', mode: 'pass', icon: <RepeatIcon color="#84cc16" />, color: 'lime' },
   ]
 
-
   const handleMenuClick = (mode: string) => {
     if (mode === 'friend') {
       setDialogOpen(true)
+    } else if (mode === 'ai') {
+      setAiDialogOpen(true)
     } else {
       onGameStart(mode)
     }
@@ -99,6 +101,34 @@ const HomePage = ({ onGameStart }: { onGameStart: (mode: string, roomId?: string
           })}
         </div>
       </main>
+
+      {aiDialogOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-80">
+            <h2 className="text-xl font-bold mb-4">Select AI Difficulty</h2>
+            <div className="space-y-2">
+              {['easy', 'medium', 'hard'].map((level) => (
+                <button
+                  key={level}
+                  onClick={() => {
+                    setAiDialogOpen(false)
+                    onGameStart('ai', null, level)
+                  }}
+                  className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-lg transition"
+                >
+                  {level.charAt(0).toUpperCase() + level.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setAiDialogOpen(false)}
+              className="mt-4 w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <FriendGameDialog
         open={dialogOpen}

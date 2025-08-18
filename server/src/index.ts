@@ -14,13 +14,14 @@ const app = express();
 const server: http.Server = http.createServer(app);
 
 app.use(cors());
+app.use(express.json());
 
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws: WebSocket, req) => {
   try {
     const url = new URL(req.url || '', `http://${req.headers.host}`);
-    const clientId = url.searchParams.get('cid') || ''; 
+    const clientId = url.searchParams.get('cid') || '';
 
     if (url.pathname === '/play-online') {
       onlineGame(ws, clientId);

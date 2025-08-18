@@ -22,13 +22,23 @@ function wirePeers(a: WebSocket, b: WebSocket) {
     src.on('message', (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
-        if (msg?.type === 'move') {
+
+        if (msg?.type === 'move' || msg?.type === 'chatMessage') {
           safeSend(dst, msg);
+        }
+
+        // Handle startGame message request
+        if (msg?.type === 'startGame') {
+          const timeControl = msg.timeControl;
+          // Notify both players to start the game
+          safeSend(src, { type: 'startGame', timeControl });
+          safeSend(dst, { type: 'startGame', timeControl });
         }
       } catch {
         /* ignore */
       }
     });
+
     src.on('close', () => {
       peers.delete(src);
       const other = peers.get(dst);
@@ -54,7 +64,6 @@ export const friendGame = (ws: WebSocket, roomId: string, clientId?: string) => 
 
     if (msg?.type === 'joinRoom' && msg.roomId === roomId) {
       const cid = String(msg.clientId || clientId || '');
-
 
       const existing = rooms.get(roomId);
       if (existing && existing.host.readyState === WebSocket.OPEN) {

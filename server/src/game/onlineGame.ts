@@ -25,10 +25,17 @@ function pairPlayers(a: WaitingEntry, b: WaitingEntry) {
     src.on('message', (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
-        if (msg?.type === 'move') {
+        if (msg?.type === 'move' || msg?.type === 'chatMessage') {
           safeSend(dst, msg);
         }
+        if (msg?.type === 'startGame') {
+          const timeControl = msg.timeControl;
+
+          safeSend(src, { type: 'startGame', timeControl });
+          safeSend(dst, { type: 'startGame', timeControl });
+        }
       } catch {
+        
       }
     });
 
@@ -66,6 +73,7 @@ export const onlineGame = (ws: WebSocket, clientId?: string) => {
           waitingQueue.push(candidate);
           break;
         }
+
         pairPlayers(candidate, { ws, clientId: cid });
         joined = true;
         return;
